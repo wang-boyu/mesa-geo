@@ -3,7 +3,8 @@ from folium.utilities import image_to_url
 
 
 class RasterModule(VisualizationElement):
-    package_includes = ["leaflet.js", "RasterModule.js"]
+    package_includes = ["leaflet.js"]
+    local_includes = ["rainfall/RasterModule.js"]
 
     def __init__(self, view=[0, 0], zoom=10, map_height=500, map_width=500):
         super().__init__()
