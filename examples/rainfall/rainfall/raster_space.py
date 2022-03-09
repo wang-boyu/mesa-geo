@@ -12,12 +12,14 @@ class RasterLayer:
     _name: Optional[str]
     _values: np.ndarray
     _crs: Optional[pyproj.CRS]
+    _transform: rasterio.transform.TransformerBase
     _bounds: List[List[float]]  # [[min_lat, min_lon], [max_lat, max_lon]]
 
-    def __init__(self, name, values, crs, bounds):
+    def __init__(self, name, values, crs, transform, bounds):
         self._name = name
         self._values = values
         self._crs = pyproj.CRS(crs) if crs else None
+        self._transform = transform
         self._bounds = bounds
 
     @property
@@ -40,6 +42,10 @@ class RasterLayer:
     def values(self) -> np.ndarray:
         return self._values
 
+    @property
+    def transform(self) -> rasterio.transform.TransformerBase:
+        return self._transform
+
     @classmethod
     def from_file(cls, raster_file: str, layer_name: str = None) -> RasterLayer:
         with rasterio.open(raster_file, "r") as dataset:
@@ -48,11 +54,12 @@ class RasterLayer:
             # converting to lat/lon from lon/lat
             bounds = [[min_lat, min_lon], [max_lat, max_lon]]
             crs = dataset.crs["init"].upper() if dataset.crs else None
-            return cls(name=layer_name, values=values, crs=crs, bounds=bounds)
+            transform = dataset.transform
+            return cls(name=layer_name, values=values, crs=crs, transform=transform, bounds=bounds)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name={self.name}, crs={self.crs}, bounds={self.bounds}, " \
-               f"values.shape={self.values.shape})"
+               f"transform={repr(self.transform)}, values={repr(self.values)})"
 
 
 class RasterSpace:

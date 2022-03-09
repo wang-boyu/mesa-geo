@@ -17,8 +17,8 @@ class RasterModule(VisualizationElement):
         self.js_code = "elements.push(" + new_element + ");"
 
     def render(self, model):
-        image_overlay = {
-            "urls": [image_to_url(layer.values.transpose([1, 2, 0])) for layer in model.grid.layers],
+        layers = {
+            "rasters": [image_to_url(layer.values.transpose([1, 2, 0])) for layer in model.grid.layers],
             "bounds": model.grid.bounds
         }
-        return image_overlay
+        return layers
