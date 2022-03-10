@@ -13,7 +13,7 @@ class RasterLayer:
     _values: np.ndarray
     _crs: Optional[pyproj.CRS]
     _transform: rasterio.transform.TransformerBase
-    _bounds: List[List[float]]  # [[min_lat, min_lon], [max_lat, max_lon]]
+    _bounds: List[List[float]]  # [[min_x, min_y], [max_x, max_y]]
 
     def __init__(self, name, values, crs, transform, bounds):
         self._name = name
@@ -50,9 +50,7 @@ class RasterLayer:
     def from_file(cls, raster_file: str, layer_name: str = None) -> RasterLayer:
         with rasterio.open(raster_file, "r") as dataset:
             values = dataset.read()
-            min_lon, min_lat, max_lon, max_lat = dataset.bounds
-            # converting to lat/lon from lon/lat
-            bounds = [[min_lat, min_lon], [max_lat, max_lon]]
+            bounds = [[dataset.bounds.left, dataset.bounds.bottom], [dataset.bounds.right, dataset.bounds.top]]
             crs = dataset.crs["init"].upper() if dataset.crs else None
             transform = dataset.transform
             return cls(name=layer_name, values=values, crs=crs, transform=transform, bounds=bounds)
@@ -65,7 +63,7 @@ class RasterLayer:
 class RasterSpace:
     _crs: pyproj.CRS
     _layers: List[RasterLayer]
-    _bounds: List[List[float]]  # [[min_lat, min_lon], [max_lat, max_lon]]
+    _bounds: List[List[float]]  # [[min_x, min_y], [max_x, max_y]]
 
     def __init__(self):
         self._crs = pyproj.CRS("EPSG:4326")
@@ -89,12 +87,9 @@ class RasterSpace:
         proj = Transformer.from_crs(layer.crs, self.crs, always_xy=True) if layer.crs else None
         new_bounds = []
         for layer_bound, space_bound in zip_longest(layer.bounds, self.bounds):
-            if proj:
-                transformed_layer_lon, transformed_layer_lat = proj.transform(layer_bound[1], layer_bound[0])
-            else:
-                transformed_layer_lat, transformed_layer_lon = layer_bound
+            transformed_layer_x, transformed_layer_y = proj.transform(*layer_bound) if proj else layer_bound
             if space_bound:
-                new_bounds.append([max(transformed_layer_lat, space_bound[0]), (transformed_layer_lon, space_bound[1])])
+                new_bounds.append([max(transformed_layer_x, space_bound[0]), max(transformed_layer_y, space_bound[1])])
             else:
-                new_bounds.append([transformed_layer_lat, transformed_layer_lon])
+                new_bounds.append([transformed_layer_x, transformed_layer_y])
         self._bounds = new_bounds

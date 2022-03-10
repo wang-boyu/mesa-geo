@@ -13,7 +13,7 @@ class RainfallModel(Model):
         self.schedule = RandomActivation(self)
 
         # Create raster layers
-        self.grid.add_layer(RasterLayer.from_file("rainfall/elevation.asc"))
+        self.grid.add_layer(RasterLayer.from_file("rainfall/FAA_UTM18N_NAD83.tif"))
 
     def step(self):
         # self.datacollector.collect(self)

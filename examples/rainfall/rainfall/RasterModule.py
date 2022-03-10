@@ -19,6 +19,7 @@ class RasterModule(VisualizationElement):
     def render(self, model):
         layers = {
             "rasters": [image_to_url(layer.values.transpose([1, 2, 0])) for layer in model.grid.layers],
-            "bounds": model.grid.bounds
+            # longlat to latlong
+            "bounds": [list(reversed(model.grid.bounds[0])), list(reversed(model.grid.bounds[1]))]
         }
         return layers
