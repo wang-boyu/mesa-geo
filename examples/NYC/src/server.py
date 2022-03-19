@@ -1,5 +1,4 @@
-from mesa_geo.visualization.ModularVisualization import ModularServer
-
+from .ModularVisualization import ModularServer
 from .GeoSpaceModule import GeoSpaceModule
 from .model import NycModel
 
@@ -13,7 +12,7 @@ def agent_portrayal(agent):
     return portrayal
 
 
-geospace_element = GeoSpaceModule(map_height=500, map_width=500)
+geospace_element = GeoSpaceModule(agent_portrayal, map_height=500, map_width=500)
 
 server = ModularServer(NycModel,
                        [geospace_element],

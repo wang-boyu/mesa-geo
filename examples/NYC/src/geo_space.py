@@ -114,6 +114,10 @@ class GeoSpace:
     def bounds(self) -> List[List[float]]:
         return self._bounds
 
+    @property
+    def agents(self) -> List:
+        return []
+
     def add_layer(self, layer: Union[RasterLayer, VectorLayer]) -> None:
         self._layers.append(layer)
         proj = Transformer.from_crs(layer.crs, self.crs, always_xy=True) if layer.crs else None

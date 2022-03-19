@@ -5,38 +5,45 @@ var GeoSpaceModule = function (view, zoom, map_width, map_height) {
     var div = $(map_tag)[0]
     $('#elements').append(div)
 
-    // Create Leaflet map and raster layers
+    // Create Leaflet map and agent layer
     var Lmap = L.map('mapid', {zoomSnap: 0.1}).setView(view, zoom)
-    var dummyUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
-    var rasterLayers = [L.imageOverlay(dummyUrl, [[0, 0], [0, 0]]).addTo(Lmap)]
-    var vectorLayers = [L.geoJSON().addTo(Lmap)]
+    var agentLayer = L.geoJSON().addTo(Lmap)
 
-    this.render = function (layers) {
-        rasterLayers.forEach(function (layer) {
-            layer.remove()
-        })
-        vectorLayers.forEach(function (layer) {
-            layer.remove()
-        })
-        rasterLayers = []
+    this.renderLayers = function (layers) {
         layers.rasters.forEach(function (layer) {
-            rasterLayers.push(L.imageOverlay(layer, layers.bounds).addTo(Lmap))
+            L.imageOverlay(layer, layers.bounds).addTo(Lmap)
         })
-        vectorLayers = []
         layers.vectors.forEach(function (layer) {
-            vectorLayers.push(L.geoJSON(layer).addTo(Lmap))
+            L.geoJSON(layer).addTo(Lmap)
         })
         Lmap.fitBounds(layers.bounds)
     }
 
-    this.reset = function () {
-        rasterLayers.forEach(function (layer) {
-            layer.remove()
-        })
-        rasterLayers = [L.imageOverlay(dummyUrl, [[0, 0], [0, 0]]).addTo(Lmap)]
-        vectorLayers.forEach(function (layer) {
-            layer.remove()
-        })
-        vectorLayers = [L.geoJSON().addTo(Lmap)]
+    this.render = function (data) {
+        agentLayer.remove()
+        agentLayer = L.geoJSON(data, {
+            onEachFeature: PopUpProperties,
+            style: function (feature) {
+                return {color: feature.properties.color};
+            },
+            pointToLayer: function (feature, latlang) {
+                return L.circleMarker(latlang, {radius: feature.properties.radius, color: feature.properties.color});
+            }
+        }).addTo(Lmap)
     }
+
+    this.reset = function () {
+        agentLayer.remove()
+    }
+}
+
+function PopUpProperties(feature, layer) {
+    var popupContent = '<table>'
+    if (feature.properties) {
+        for (var p in feature.properties) {
+            popupContent += '<tr><td>' + p + '</td><td>' + feature.properties[p] + '</td></tr>'
+        }
+    }
+    popupContent += '</table>'
+    layer.bindPopup(popupContent)
 }
