@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import os
-import pkgutil
 import re
 import shutil
+import importlib
 import sys
 from distutils.command.build import build
 
@@ -36,7 +36,9 @@ class BuildCommand(build):
 
 
 def get_mesa_templates(package, template_dir):
-    pkg_dir = sys.modules[package].__path__[0]
+    spec = importlib.util.find_spec(package)
+    importlib._bootstrap._load(spec)
+    pkg_dir = sys.modules.get(package).__path__[0]
     for subdir in os.listdir(os.path.join(pkg_dir, template_dir)):
         # do not copy modular_template.html to avoid being overwritten
         if os.path.isdir(os.path.join(pkg_dir, template_dir, subdir)):

@@ -1,5 +1,8 @@
+from folium.utilities import image_to_url
 from shapely.geometry import mapping
 from mesa.visualization.ModularVisualization import VisualizationElement
+
+from mesa_geo.geospace import RasterLayer, VectorLayer
 
 
 class MapModule(VisualizationElement):
@@ -18,6 +21,23 @@ class MapModule(VisualizationElement):
         new_element = "new MapModule({}, {}, {}, {})"
         new_element = new_element.format(view, zoom, map_width, map_height)
         self.js_code = "elements.push(" + new_element + ");"
+
+    def render_layers(self, model):
+        layers = {"rasters": [], "vectors": [], "bounds": []}
+        for layer in model.space.layers:
+            if isinstance(layer, RasterLayer):
+                layers["rasters"].append(
+                    image_to_url(layer.values.transpose([1, 2, 0]))
+                )
+            elif isinstance(layer, VectorLayer):
+                layers["vectors"].append(layer.__geo_interface__)
+        # longlat to latlong
+        if model.space.bounds:
+            layers["bounds"] = [
+                list(reversed(model.space.bounds[0])),
+                list(reversed(model.space.bounds[1])),
+            ]
+        return layers
 
     def render(self, model):
         feature_collection = {"type": "FeatureCollection", "features": []}

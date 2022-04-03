@@ -1,8 +1,9 @@
-from mesa_geo.visualization.ModularVisualization import ModularServer
 from mesa.visualization.modules import ChartModule, TextElement
 from mesa.visualization.UserParam import UserSettableParameter
-from model import InfectedModel, PersonAgent
+
 from mesa_geo.visualization.modules import MapModule
+from mesa_geo.visualization.modular_server import ModularServer
+from model import InfectedModel, PersonAgent
 
 
 class InfectedText(TextElement):

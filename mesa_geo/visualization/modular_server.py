@@ -17,8 +17,6 @@ provided by each element.
 
 This file consists of the following classes:
 
-VisualizationElement: Parent class for all other visualization elements, with
-                      the minimal necessary options.
 PageHandler: The handler for the visualization page, generated from a template
              and built from the various visualization elements.
 SocketHandler: Handles the websocket connection between the client page and
@@ -107,6 +105,8 @@ import tornado.gen
 import webbrowser
 
 from mesa.visualization.UserParam import UserSettableParameter
+from mesa_geo.visualization.modules import MapModule
+
 
 # Suppress several pylint warnings for this file.
 # Attributes being defined outside of init is a Tornado feature.
@@ -117,48 +117,6 @@ if platform.system() == "Windows" and platform.python_version_tuple() >= ("3", "
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 D3_JS_FILE = "external/d3-4.13.0.min.js"
-
-
-class VisualizationElement:
-    """
-    Defines an element of the visualization.
-
-    Attributes:
-        package_includes: A list of external JavaScript files to include that
-                          are part of the Mesa packages.
-        local_includes: A list of JavaScript files that are local to the
-                        directory that the server is being run in.
-        js_code: A JavaScript code string to instantiate the element.
-
-    Methods:
-        render: Takes a model object, and produces JSON data which can be sent
-                to the client.
-
-    """
-
-    package_includes = []
-    local_includes = []
-    js_code = ""
-    render_args = {}
-
-    def __init__(self):
-        pass
-
-    def render(self, model):
-        """Build visualization data from a model object.
-
-        Args:
-            model: A model object
-
-        Returns:
-            A JSON-ready object.
-
-        """
-        return "<b>VisualizationElement goes here</b>."
-
-
-# =============================================================================
-# Actual Tornado code starts here:
 
 
 class PageHandler(tornado.web.RequestHandler):
@@ -186,7 +144,11 @@ class SocketHandler(tornado.websocket.WebSocketHandler):
         if self.application.verbose:
             print("Socket opened!")
         self.write_message(
-            {"type": "model_params", "params": self.application.user_params}
+            {
+                "type": "model_params",
+                "params": self.application.user_params,
+                "layers": self.application.render_layers(),
+            }
         )
 
     def check_origin(self, origin):
@@ -225,7 +187,6 @@ class SocketHandler(tornado.websocket.WebSocketHandler):
                     self.application.model_kwargs[param].value = value
                 else:
                     self.application.model_kwargs[param] = value
-
         else:
             if self.application.verbose:
                 print("Unexpected message!")
@@ -314,6 +275,14 @@ class ModularServer(tornado.web.Application):
                 model_params[key] = val
 
         self.model = self.model_cls(**model_params)
+
+    def render_layers(self):
+        """Turn the GeoSpace layers into a dictionary of visualizations."""
+        layers = [
+            element.render_layers(self.model) if isinstance(element, MapModule) else {}
+            for element in self.visualization_elements
+        ]
+        return layers
 
     def render_model(self):
         """Turn the current state of the model into a dictionary of

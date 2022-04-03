@@ -1,10 +1,97 @@
+from __future__ import annotations
+from typing import List, Optional, Union
+from itertools import zip_longest
+
 import pyproj
+from pyproj import Transformer
 from libpysal import weights
 from rtree import index
 from shapely.geometry import Point
 from shapely.prepared import prep
+import numpy as np
+import geopandas as gpd
+import rasterio
 
 from mesa_geo.geoagent import GeoAgent
+
+
+class RasterLayer:
+    _values: np.ndarray
+    _crs: Optional[pyproj.CRS]
+    _transform: rasterio.transform.TransformerBase
+    _bounds: List[List[float]]  # [[min_x, min_y], [max_x, max_y]]
+
+    def __init__(self, values, crs, transform, bounds):
+        self._values = values
+        self._crs = pyproj.CRS(crs) if crs else None
+        self._transform = transform
+        self._bounds = bounds
+
+    @property
+    def shape(self):
+        return self.values.shape
+
+    @property
+    def crs(self) -> Optional[pyproj.CRS]:
+        return self._crs
+
+    @property
+    def bounds(self) -> List[List[float]]:
+        return self._bounds
+
+    @property
+    def values(self) -> np.ndarray:
+        return self._values
+
+    @property
+    def transform(self) -> rasterio.transform.TransformerBase:
+        return self._transform
+
+    @classmethod
+    def from_file(cls, raster_file: str) -> RasterLayer:
+        with rasterio.open(raster_file, "r") as dataset:
+            values = dataset.read()
+            bounds = [
+                [dataset.bounds.left, dataset.bounds.bottom],
+                [dataset.bounds.right, dataset.bounds.top],
+            ]
+            crs = dataset.crs["init"].upper() if dataset.crs else None
+            transform = dataset.transform
+            return cls(values=values, crs=crs, transform=transform, bounds=bounds)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}(crs={self.crs}, bounds={self.bounds}, transform={repr(self.transform)},"
+            f" values={repr(self.values)})"
+        )
+
+
+class VectorLayer:
+    _data: gpd.GeoDataFrame
+
+    # TODO replace self.data with self.crs, self.bounds, etc, and map gdf columns to attributes using setattr
+    # _crs: pyproj.CRS
+    # _bounds: List[List[float]]  # [[min_x, min_y], [max_x, max_y]]
+
+    def __init__(self, gdf):
+        self._data = gdf
+
+    @property
+    def crs(self) -> Optional[pyproj.CRS]:
+        # return self._crs
+        return self._data.crs
+
+    @property
+    def bounds(self) -> List[List[float]]:
+        # return self._bounds
+        return [
+            list(self._data.geometry.total_bounds[:2]),
+            list(self._data.geometry.total_bounds[-2:]),
+        ]
+
+    @property
+    def __geo_interface__(self) -> dict:
+        return self._data.to_crs("EPSG:4326").__geo_interface__
 
 
 class GeoSpace:
@@ -47,6 +134,40 @@ class GeoSpace:
         # Set up rtree index
         self.idx = index.Index()
         self.idx.agents = {}
+
+        self._layers = []
+        self._bounds = []
+
+    @property
+    def layers(self) -> List[Union[RasterLayer, VectorLayer]]:
+        return self._layers
+
+    @property
+    def bounds(self) -> List[List[float]]:
+        return self._bounds
+
+    def add_layer(self, layer: Union[RasterLayer, VectorLayer]) -> None:
+        self._layers.append(layer)
+        proj = (
+            Transformer.from_crs(layer.crs, self.WGS84, always_xy=True)
+            if layer.crs
+            else None
+        )
+        new_bounds = []
+        for layer_bound, space_bound in zip_longest(layer.bounds, self.bounds):
+            transformed_layer_x, transformed_layer_y = (
+                proj.transform(*layer_bound) if proj else layer_bound
+            )
+            if space_bound:
+                new_bounds.append(
+                    [
+                        max(transformed_layer_x, space_bound[0]),
+                        max(transformed_layer_y, space_bound[1]),
+                    ]
+                )
+            else:
+                new_bounds.append([transformed_layer_x, transformed_layer_y])
+        self._bounds = new_bounds
 
     def add_agents(self, agents):
         """Add a list of GeoAgents to the Geospace.
