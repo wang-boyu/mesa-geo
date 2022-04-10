@@ -23,7 +23,7 @@ class DevelopCommand(develop):
     """Installation for development mode."""
 
     def run(self):
-        get_mesa_viz_files()
+        get_mesa_templates(package="mesa", template_dir="visualization/templates")
         develop.run(self)
 
 
@@ -31,21 +31,8 @@ class BuildCommand(build):
     """Command for build mode."""
 
     def run(self):
-        get_mesa_viz_files()
+        get_mesa_templates(package="mesa", template_dir="visualization/templates")
         build.run(self)
-
-
-def get_mesa_viz_files():
-    get_viz_server_file(
-        package="mesa", server_file="visualization/ModularVisualization.py"
-    )
-    get_mesa_templates(package="mesa", template_dir="visualization/templates")
-
-
-def get_viz_server_file(package, server_file):
-    viz_server_file = pkgutil.get_data(package, server_file)
-    with open(os.path.join("mesa_geo", server_file), "wb") as server_file:
-        server_file.write(viz_server_file)
 
 
 def get_mesa_templates(package, template_dir):
