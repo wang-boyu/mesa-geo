@@ -1,4 +1,5 @@
-from typing import Tuple
+from __future__ import annotations
+from typing import Dict
 
 import mesa
 
@@ -8,14 +9,16 @@ from .model import UrbanGrowth
 from .space import UrbanCell
 
 
-def cell_portrayal(cell: UrbanCell) -> Tuple[float, float, float, float]:
+def cell_portrayal(cell: UrbanCell) -> Dict[str, str | float]:
+    portrayal = {}
     if cell.urban:
         if cell.new_urbanized:
-            return 255, 0, 0, 1
+            portrayal["color"] = "Red"
         else:
-            return 0, 0, 255, 1
+            portrayal["color"] = "Blue"
     else:
-        return 0, 0, 0, 0
+        portrayal["opacity"] = 0.0
+    return portrayal
 
 
 class UrbanizedText(mesa.visualization.TextElement):

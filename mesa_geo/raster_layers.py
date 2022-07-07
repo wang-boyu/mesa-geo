@@ -27,6 +27,7 @@ from rasterio.warp import (
     reproject,
     Resampling,
 )
+import webcolors
 
 from mesa_geo.geo_base import GeoBase
 
@@ -392,7 +393,17 @@ class RasterLayer(RasterBase):
         values = np.empty(shape=(4, self.height, self.width))
         for cell in self:
             row, col = cell.indices
-            values[:, row, col] = colormap(cell)
+            portrayal = colormap(cell)
+            if isinstance(portrayal, dict):
+                color = portrayal.get("color", "black")
+                alpha = portrayal.get("opacity", 1)
+                if color.startswith("#"):
+                    rgb = webcolors.hex_to_rgb(color)
+                else:
+                    rgb = webcolors.name_to_rgb(color)
+                values[:, row, col] = *rgb, alpha
+            else:
+                values[:, row, col] = portrayal
         return ImageLayer(values=values, crs=self.crs, total_bounds=self.total_bounds)
 
 
