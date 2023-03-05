@@ -19,14 +19,11 @@ jobs:
     strategy:
       fail-fast: False
       matrix:
-        #os: [windows, ubuntu, macos]
-        # TODO need to figure out how to install libspatialindex-dev for
-        # windows and macos
-        os: [ubuntu]
-        python-version: ["3.10"]
+        os: [windows, ubuntu, macos]
+        python-version: ["3.11"]
         include:
           - os: ubuntu
-            python-version: "3.11"
+            python-version: "3.10"
           - os: ubuntu
             python-version: "3.9"
           - os: ubuntu
@@ -46,10 +43,7 @@ jobs:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('Pipfile.lock') }}
     - name: Install dependencies
-      run: |
-        sudo apt-get install libspatialindex-dev
-        pip install .
-        pip install pytest pytest-cov
+      run: pip install wheel && pip install .[dev]
     - name: Test with pytest
       run: pytest --cov=mesa_geo tests/ --cov-report=xml
     - if: matrix.os == 'ubuntu'
