@@ -22,7 +22,7 @@ import numpy as np
 import rasterio as rio
 from affine import Affine
 from mesa.agent import Agent
-from mesa.space import Coordinate, accept_tuple_argument
+from mesa.space import Coordinate, accept_tuple_argument, is_integer
 from rasterio.warp import (
     Resampling,
     calculate_default_transform,
@@ -206,14 +206,11 @@ class RasterLayer(RasterBase):
     Methods from `mesa.space.Grid` that are not copied over:
 
     torus_adj
-    neighbor_iter
     move_agent
     place_agent
-    _place_agent
     remove_agent
     is_cell_empty
     move_to_empty
-    find_empty
     exists_empty_cells
 
     Another difference is that `mesa.space.Grid` has `self.grid: List[List[Agent | None]]`,
@@ -249,15 +246,11 @@ class RasterLayer(RasterBase):
         return self._attributes
 
     @overload
-    def __getitem__(self, index: int) -> list[Cell]:
+    def __getitem__(self, index: int | Sequence[Coordinate]) -> list[Cell]:
         ...
 
     @overload
     def __getitem__(self, index: tuple[int | slice, int | slice]) -> Cell | list[Cell]:
-        ...
-
-    @overload
-    def __getitem__(self, index: Sequence[Coordinate]) -> list[Cell]:
         ...
 
     def __getitem__(
@@ -274,35 +267,27 @@ class RasterLayer(RasterBase):
         if isinstance(index[0], tuple):
             # cells[(x1, y1), (x2, y2)]
             index = cast(Sequence[Coordinate], index)
-
-            cells = []
-            for pos in index:
-                x1, y1 = pos
-                cells.append(self.cells[x1][y1])
-            return cells
+            return [self.cells[x][y] for x, y in index]
 
         x, y = index
+        x_int, y_int = is_integer(x), is_integer(y)
 
-        if isinstance(x, int) and isinstance(y, int):
+        if x_int and y_int:
             # cells[x, y]
             x, y = cast(Coordinate, index)
             return self.cells[x][y]
-
-        if isinstance(x, int):
+        elif x_int:
             # cells[x, :]
-            x = slice(x, x + 1)
-
-        if isinstance(y, int):
-            # grid[:, y]
-            y = slice(y, y + 1)
-
-        # cells[:, :]
-        x, y = (cast(slice, x), cast(slice, y))
-        cells = []
-        for rows in self.cells[x]:
-            for cell in rows[y]:
-                cells.append(cell)
-        return cells
+            y = cast(slice, y)
+            return self.cells[x][y]
+        elif y_int:
+            # cells[:, y]
+            x = cast(slice, x)
+            return [rows[y] for rows in self.cells[x]]
+        else:
+            # cells[:, :]
+            x, y = (cast(slice, x), cast(slice, y))
+            return [cell for rows in self.cells[x] for cell in rows[y]]
 
     def __iter__(self) -> Iterator[Cell]:
         """
@@ -405,57 +390,54 @@ class RasterLayer(RasterBase):
         include_center: bool = False,
         radius: int = 1,
     ) -> Iterator[Cell]:
-        """
-        Return an iterator over neighbors to a certain point.
+        """Return an iterator over neighbors to a certain point.
 
-        :param Coordinate pos: Coordinate tuple for the neighborhood to get.
-        :param bool moore: Whether to use Moore neighborhood or not. If True,
-            return Moore neighborhood (including diagonals). If False, return
-            Von Neumann neighborhood (exclude diagonals).
-        :param bool include_center: If True, return the (x, y) cell as well.
-            Otherwise, return surrounding cells only. Default is False.
-        :param int radius: Radius, in cells, of the neighborhood. Default is 1.
-        :return: An iterator of cells that are in the neighborhood; at most 9 (8)
-            if Moore, 5 (4) if Von Neumann (if not including the center).
-        :rtype: Iterator[Cell]
-        """
+        Args:
+            pos: Coordinates for the neighborhood to get.
+            moore: If True, return Moore neighborhood
+                    (including diagonals)
+                   If False, return Von Neumann neighborhood
+                     (exclude diagonals)
+            include_center: If True, return the (x, y) cell as well.
+                            Otherwise,
+                            return surrounding cells only.
+            radius: radius, in cells, of neighborhood to get.
 
+        Returns:
+            An iterator of cells in the given neighborhood;
+            at most 9 if Moore, 5 if Von-Neumann
+            (8 and 4 if not including the center).
+        """
         neighborhood = self.get_neighborhood(pos, moore, include_center, radius)
         return self.iter_cell_list_contents(neighborhood)
 
     @accept_tuple_argument
     def iter_cell_list_contents(
         self, cell_list: Iterable[Coordinate]
-    ) -> Iterator[Cell]:
-        """
-        Returns an iterator of the contents of the cells
-        identified in cell_list.
+    ) -> Iterator[Agent]:
+        """Returns an iterator of the agents contained in the cells identified
+        in `cell_list`; cells with empty content are excluded.
 
-        :param Iterable[Coordinate] cell_list: Array-like of (x, y) tuples,
-            or single tuple.
-        :return: An iterator of the contents of the cells identified in cell_list.
-        :rtype: Iterator[Cell]
-        """
+        Args:
+            cell_list: Array-like of (x, y) tuples, or single tuple.
 
-        # Note: filter(None, iterator) filters away an element of iterator that
-        # is falsy. Hence, iter_cell_list_contents returns only non-empty
-        # contents.
-        return filter(None, (self.cells[x][y] for x, y in cell_list))
+        Returns:
+            An iterator of the agents contained in the cells identified in `cell_list`.
+        """
+        # iter_cell_list_contents returns only non-empty contents.
+        return (cell for x, y in cell_list if (cell := self.cells[x][y]) is not None)
 
     @accept_tuple_argument
     def get_cell_list_contents(self, cell_list: Iterable[Coordinate]) -> list[Cell]:
+        """Returns an iterator of the agents contained in the cells identified
+        in `cell_list`; cells with empty content are excluded.
+
+        Args:
+            cell_list: Array-like of (x, y) tuples, or single tuple.
+
+        Returns:
+            A list of the agents contained in the cells identified in `cell_list`.
         """
-        Returns a list of the contents of the cells
-        identified in cell_list.
-
-        Note: this method returns a list of cells.
-
-        :param Iterable[Coordinate] cell_list: Array-like of (x, y) tuples,
-            or single tuple.
-        :return: A list of the contents of the cells identified in cell_list.
-        :rtype: List[Cell]
-        """
-
         return list(self.iter_cell_list_contents(cell_list))
 
     def get_neighborhood(
@@ -465,31 +447,78 @@ class RasterLayer(RasterBase):
         include_center: bool = False,
         radius: int = 1,
     ) -> list[Coordinate]:
+        """Return a list of cells that are in the neighborhood of a
+        certain point.
+
+        Args:
+            pos: Coordinate tuple for the neighborhood to get.
+            moore: If True, return Moore neighborhood
+                   (including diagonals)
+                   If False, return Von Neumann neighborhood
+                   (exclude diagonals)
+            include_center: If True, return the (x, y) cell as well.
+                            Otherwise, return surrounding cells only.
+            radius: radius, in cells, of neighborhood to get.
+
+        Returns:
+            A list of coordinate tuples representing the neighborhood;
+            With radius 1, at most 9 if Moore, 5 if Von Neumann (8 and 4
+            if not including the center).
+        """
         cache_key = (pos, moore, include_center, radius)
         neighborhood = self._neighborhood_cache.get(cache_key, None)
 
-        if neighborhood is None:
-            coordinates: set[Coordinate] = set()
+        if neighborhood is not None:
+            return neighborhood
 
-            x, y = pos
-            for dy in range(-radius, radius + 1):
-                for dx in range(-radius, radius + 1):
-                    if dx == 0 and dy == 0 and not include_center:
+        if self.out_of_bounds(pos):
+            raise Exception("The `pos` tuple passed is out of bounds.")
+
+        # we use a dict to keep insertion order
+        neighborhood = {}
+
+        x, y = pos
+
+        # First we check if the neighborhood is inside the grid
+        if (
+            x >= radius
+            and self.width - x > radius
+            and y >= radius
+            and self.height - y > radius
+        ):
+            # If the radius is smaller than the distance from the borders, we
+            # can skip boundary checks.
+            x_range = range(x - radius, x + radius + 1)
+            y_range = range(y - radius, y + radius + 1)
+
+            for new_x in x_range:
+                for new_y in y_range:
+                    if not moore and abs(new_x - x) + abs(new_y - y) > radius:
                         continue
-                    # Skip coordinates that are outside manhattan distance
+
+                    neighborhood[(new_x, new_y)] = True
+
+        else:
+            # If the radius is larger than the distance from the borders, we
+            # must use a slower method, that takes into account the borders
+            # property.
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
                     if not moore and abs(dx) + abs(dy) > radius:
                         continue
 
-                    coord = (x + dx, y + dy)
+                    new_x = x + dx
+                    new_y = y + dy
 
-                    if self.out_of_bounds(coord):
-                        continue
-                    coordinates.add(coord)
+                    if not self.out_of_bounds((new_x, new_y)):
+                        neighborhood[(new_x, new_y)] = True
 
-            neighborhood = sorted(coordinates)
-            self._neighborhood_cache[cache_key] = neighborhood
+        if not include_center:
+            neighborhood.pop(pos, None)
 
-        return neighborhood
+        self._neighborhood_cache[cache_key] = list(neighborhood.keys())
+
+        return list(neighborhood.keys())
 
     def get_neighboring_cells(
         self,
@@ -498,8 +527,25 @@ class RasterLayer(RasterBase):
         include_center: bool = False,
         radius: int = 1,
     ) -> list[Cell]:
-        neighboring_cell_idx = self.get_neighborhood(pos, moore, include_center, radius)
-        return [self.cells[idx[0]][idx[1]] for idx in neighboring_cell_idx]
+        """Return a list of neighbors to a certain point.
+
+        Args:
+            pos: Coordinate tuple for the neighborhood to get.
+            moore: If True, return Moore neighborhood
+                    (including diagonals)
+                   If False, return Von Neumann neighborhood
+                     (exclude diagonals)
+            include_center: If True, return the (x, y) cell as well.
+                            Otherwise,
+                            return surrounding cells only.
+            radius: radius, in cells, of neighborhood to get.
+
+        Returns:
+            A list of cells in the given neighborhood;
+            at most 9 if Moore, 5 if Von-Neumann
+            (8 and 4 if not including the center).
+        """
+        return list(self.iter_neighbors(pos, moore, include_center, radius))
 
     def to_crs(self, crs, inplace=False) -> RasterLayer | None:
         super()._to_crs_check(crs)
