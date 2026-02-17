@@ -6,6 +6,7 @@ Raster Layers
 from __future__ import annotations
 
 import copy
+import inspect
 import itertools
 import math
 import warnings
@@ -214,14 +215,17 @@ class Cell(Agent):
         """
         Deprecated setter for `pos`.
         """
-        warnings.warn(
-            "Cell.pos setter is deprecated and will be read-only in a future release.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        # mesa Agent set pos to None by default
+        # avoid raising a warning when pos is set to None by the Agent constructor
+        if pos is not None:
+            warnings.warn(
+                "Cell.pos setter is deprecated and will be read-only in a future release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         # set the pos for backward compatibility
-        # in the future, this will be removed and raise an AttributeError,
-        # because pos is read-only
+        # in the future, this will be removed because pos is read-only
         self._pos = pos
 
     @property
@@ -313,7 +317,7 @@ class RasterLayer(RasterBase):
         super().__init__(width, height, crs, total_bounds)
         self.model = model
         self.cell_cls = cell_cls
-        self._initialize_cells(model, cell_cls)
+        self._initialize_cells()
         self._attributes = set()
         self._neighborhood_cache = {}
 
@@ -328,19 +332,47 @@ class RasterLayer(RasterBase):
                 row, col = cell.rowcol
                 cell._xy = rio.transform.xy(self.transform, row, col, offset="center")
 
-    def _initialize_cells(self, model: Model, cell_cls: type[Cell]):
-        self.cells = []
-        for grid_x in range(self.width):
-            col: list[cell_cls] = []
-            for grid_y in range(self.height):
-                row_idx, col_idx = self.height - grid_y - 1, grid_x
-                xy = rio.transform.xy(self.transform, row_idx, col_idx, offset="center")
+    def _initialize_cells(self) -> None:
+        try:
+            init_params = inspect.signature(self.cell_cls.__init__).parameters
+        except (TypeError, ValueError):
+            supports_legacy_pos_indices = False
+        else:
+            supports_legacy_pos_indices = (
+                "pos" in init_params and "indices" in init_params
+            )
+
+        if supports_legacy_pos_indices:
+
+            def make_cell(grid_x: int, grid_y: int, row_idx: int, col_idx: int, xy):
+                # Backward-compatible path for legacy signature:
+                # __init__(self, model, pos=None, indices=None, ...)
                 cell = self.cell_cls(
-                    model,
+                    self.model,
+                    pos=(grid_x, grid_y),
+                    indices=(row_idx, col_idx),
+                )
+                # Legacy constructor path does not accept xy; set it manually.
+                cell._xy = xy
+                return cell
+        else:
+            # New constructor path: __init__(self, model, pos=None, rowcol=None, xy=None, ...)
+            # or: __init__(self, model, **kwargs)
+            def make_cell(grid_x: int, grid_y: int, row_idx: int, col_idx: int, xy):
+                return self.cell_cls(
+                    self.model,
                     pos=(grid_x, grid_y),
                     rowcol=(row_idx, col_idx),
                     xy=xy,
                 )
+
+        self.cells = []
+        for grid_x in range(self.width):
+            col: list[Cell] = []
+            for grid_y in range(self.height):
+                row_idx, col_idx = self.height - grid_y - 1, grid_x
+                xy = rio.transform.xy(self.transform, row_idx, col_idx, offset="center")
+                cell = make_cell(grid_x, grid_y, row_idx, col_idx, xy)
                 col.append(cell)
             self.cells.append(col)
 
