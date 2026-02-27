@@ -342,6 +342,89 @@ class TestRasterLayer(unittest.TestCase):
         )
         self.assertEqual(tr_cell.xy, expected_xy)
 
+    def test_get_random_xy_selector_equivalence(self):
+        cell = self.raster_layer.cells[1][2]
+
+        self.model.random.seed(19)
+        xy_from_cell = self.raster_layer.get_random_xy(cell=cell)
+        self.model.random.seed(19)
+        xy_from_pos = self.raster_layer.get_random_xy(pos=(1, 2))
+        self.model.random.seed(19)
+        xy_from_rowcol = self.raster_layer.get_random_xy(rowcol=(0, 1))
+
+        self.assertEqual(xy_from_cell, xy_from_pos)
+        self.assertEqual(xy_from_pos, xy_from_rowcol)
+
+    def test_get_random_xy_raises_for_out_of_bounds_pos(self):
+        with self.assertRaises(ValueError):
+            self.raster_layer.get_random_xy(pos=(self.raster_layer.width, 0))
+
+    def test_get_random_xy_raises_for_out_of_bounds_rowcol(self):
+        with self.assertRaises(ValueError):
+            self.raster_layer.get_random_xy(rowcol=(self.raster_layer.height, 0))
+
+    def test_get_random_xy_raises_for_cell_without_rowcol(self):
+        detached_cell = mg.Cell(self.model, pos=(0, 0), rowcol=None)
+        with self.assertRaises(ValueError):
+            self.raster_layer.get_random_xy(cell=detached_cell)
+
+    def test_get_random_xy_raises_for_cell_with_out_of_bounds_rowcol(self):
+        detached_cell = mg.Cell(
+            self.model, pos=(0, 0), rowcol=(self.raster_layer.height, 0)
+        )
+        with self.assertRaises(ValueError):
+            self.raster_layer.get_random_xy(cell=detached_cell)
+
+    def test_out_of_bounds_accepts_pos_rowcol_and_xy(self):
+        self.assertFalse(self.raster_layer.out_of_bounds((0, 0)))
+        self.assertTrue(self.raster_layer.out_of_bounds((self.raster_layer.width, 0)))
+
+        self.assertFalse(self.raster_layer.out_of_bounds(rowcol=(0, 0)))
+        self.assertTrue(
+            self.raster_layer.out_of_bounds(rowcol=(self.raster_layer.height, 0))
+        )
+
+        min_x, min_y, max_x, max_y = self.raster_layer.total_bounds
+        self.assertFalse(self.raster_layer.out_of_bounds(xy=(min_x, min_y)))
+        self.assertFalse(self.raster_layer.out_of_bounds(xy=(min_x, max_y)))
+        self.assertFalse(self.raster_layer.out_of_bounds(xy=(max_x, min_y)))
+        self.assertFalse(self.raster_layer.out_of_bounds(xy=(max_x, max_y)))
+
+        delta_x, delta_y = self.raster_layer.resolution
+        self.assertTrue(self.raster_layer.out_of_bounds(xy=(max_x + delta_x, min_y)))
+        self.assertTrue(self.raster_layer.out_of_bounds(xy=(min_x, min_y - delta_y)))
+
+    def test_out_of_bounds_raises_for_invalid_selector_combinations(self):
+        with self.assertRaises(ValueError):
+            self.raster_layer.out_of_bounds()
+
+        with self.assertRaises(ValueError):
+            self.raster_layer.out_of_bounds((0, 0), rowcol=(0, 0))
+
+        with self.assertRaises(ValueError):
+            self.raster_layer.out_of_bounds((0, 0), xy=self.raster_layer.cells[0][0].xy)
+
+    def test_out_of_bounds_xy_respects_sheared_transform_coverage(self):
+        sheared_layer = mg.RasterLayer(
+            width=2,
+            height=2,
+            crs="epsg:4326",
+            total_bounds=[0.0, 0.0, 4.0, 2.0],
+            model=self.model,
+        )
+        sheared_layer._transform = rio.transform.Affine(1.0, 1.0, 0.0, 0.0, 1.0, 0.0)
+
+        # Inside bbox but outside the sheared raster footprint.
+        self.assertTrue(sheared_layer.out_of_bounds(xy=(0.5, 1.5)))
+        # Inside the raster footprint.
+        self.assertFalse(sheared_layer.out_of_bounds(xy=(1.5, 0.5)))
+
+    def test_out_of_bounds_xy_rejects_non_finite_values(self):
+        self.assertTrue(self.raster_layer.out_of_bounds(xy=(np.nan, 0.0)))
+        self.assertTrue(self.raster_layer.out_of_bounds(xy=(0.0, np.nan)))
+        self.assertTrue(self.raster_layer.out_of_bounds(xy=(np.inf, 0.0)))
+        self.assertTrue(self.raster_layer.out_of_bounds(xy=(0.0, -np.inf)))
+
     def test_cell_xy_updates_after_to_crs(self):
         original_xy = self.raster_layer.cells[0][0].xy
         transformed_layer = self.raster_layer.to_crs("epsg:3857")

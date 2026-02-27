@@ -152,17 +152,77 @@ class RasterBase(GeoBase):
     def to_crs(self, crs, inplace=False) -> RasterBase | None:
         raise NotImplementedError
 
-    def out_of_bounds(self, pos: Coordinate) -> bool:
+    def out_of_bounds(
+        self,
+        pos: Coordinate | None = None,
+        *,
+        rowcol: Coordinate | None = None,
+        xy: FloatCoordinate | None = None,
+    ) -> bool:
         """
-        Determines whether position is off the grid.
+        Determine whether a coordinate is outside the raster extent.
 
-        :param Coordinate pos: Position to check.
-        :return: True if position is off the grid, False otherwise.
+        Exactly one selector must be provided.
+
+        :param Coordinate | None pos: Grid position in ``(grid_x, grid_y)`` format
+            with origin at lower left.
+        :param Coordinate | None rowcol: Raster indices in ``(row, col)`` format
+            with origin at upper left.
+        :param FloatCoordinate | None xy: Continuous ``(x, y)`` coordinate in CRS units.
+        :return: True if the selected coordinate is off the raster, False otherwise.
         :rtype: bool
+        :raises ValueError: If selector arguments are invalid.
         """
 
-        x, y = pos
-        return x < 0 or x >= self.width or y < 0 or y >= self.height
+        provided = [
+            name
+            for name, arg in (("pos", pos), ("rowcol", rowcol), ("xy", xy))
+            if arg is not None
+        ]
+        if len(provided) != 1:
+            selected = ", ".join(provided) if provided else "none"
+            raise ValueError(
+                "Exactly one of ``pos``, ``rowcol``, or ``xy`` must be provided. "
+                f"Received: {selected}."
+            )
+
+        if pos is not None:
+            grid_x, grid_y = pos
+            return (
+                grid_x < 0
+                or grid_x >= self.width
+                or grid_y < 0
+                or grid_y >= self.height
+            )
+
+        if rowcol is not None:
+            row, col = rowcol
+            return row < 0 or row >= self.height or col < 0 or col >= self.width
+
+        assert xy is not None
+        x_coord, y_coord = xy
+        if not (np.isfinite(x_coord) and np.isfinite(y_coord)):
+            return True
+        # Use inverse affine mapping so rotated/sheared rasters are handled
+        # correctly (total_bounds alone can include points outside coverage).
+        col, row = (~self.transform) * (x_coord, y_coord)
+        if not (np.isfinite(col) and np.isfinite(row)):
+            return True
+        # Inverse-transform outputs floats; boundary points can land slightly
+        # outside [0, width]/[0, height] due to floating-point roundoff.
+        tol = np.finfo(float).eps * max(
+            1.0,
+            abs(col),
+            abs(row),
+            float(self.width),
+            float(self.height),
+        )
+        return (
+            col < -tol
+            or col > self.width + tol
+            or row < -tol
+            or row > self.height + tol
+        )
 
 
 class Cell(Agent):
@@ -564,6 +624,76 @@ class RasterLayer(RasterBase):
                         self.cells[grid_x][grid_y], name
                     )
         return data
+
+    def get_random_xy(
+        self,
+        cell: Cell | None = None,
+        *,
+        pos: Coordinate | None = None,
+        rowcol: Coordinate | None = None,
+    ) -> FloatCoordinate:
+        """
+        Generate random continuous (x, y) coordinates within a specific raster cell.
+
+        Exactly one of ``cell``, ``pos``, or ``rowcol`` must be provided.
+
+        :param Cell | None cell: Cell to sample from.
+        :param Coordinate | None pos: Grid coordinate in ``(grid_x, grid_y)``
+            format with origin at lower left.
+        :param Coordinate | None rowcol: Raster index in ``(row, col)`` format
+            with origin at upper left.
+        :return: Random continuous ``(x, y)`` coordinate within the selected
+            cell in CRS units.
+        :rtype: FloatCoordinate
+        :raises ValueError: If selector arguments are invalid or out of bounds.
+        """
+        provided = [
+            name
+            for name, arg in (("cell", cell), ("pos", pos), ("rowcol", rowcol))
+            if arg is not None
+        ]
+        if len(provided) != 1:
+            selected = ", ".join(provided) if provided else "none"
+            raise ValueError(
+                "Exactly one of ``cell``, ``pos``, or ``rowcol`` must be provided. "
+                f"Received: {selected}."
+            )
+
+        # Resolve to pixel coordinates (row, col)
+        if cell is not None:
+            if cell.rowcol is None:
+                raise ValueError("`cell.rowcol` is None; cannot derive raster indices.")
+            row, col = cell.rowcol
+            if self.out_of_bounds(rowcol=(row, col)):
+                raise ValueError(
+                    f"`cell.rowcol` {(row, col)} is out of bounds for raster with "
+                    f"height={self.height} and width={self.width}."
+                )
+        elif pos is not None:
+            if self.out_of_bounds(pos):
+                raise ValueError(
+                    f"`pos` {pos} is out of bounds for raster with width={self.width} and "
+                    f"height={self.height}."
+                )
+            grid_x, grid_y = pos
+            row, col = self.height - grid_y - 1, grid_x
+        else:
+            assert rowcol is not None
+            row, col = rowcol
+            if self.out_of_bounds(rowcol=(row, col)):
+                raise ValueError(
+                    f"`rowcol` {(row, col)} is out of bounds for raster with "
+                    f"height={self.height} and width={self.width}."
+                )
+
+        # Generate random fractional offsets [0.0, 1.0)
+        u = self.model.random.random()
+        v = self.model.random.random()
+
+        # Map pixel space to continuous CRS space using Affine matrix
+        x, y = self.transform * (col + u, row + v)
+
+        return x, y
 
     def iter_neighborhood(
         self,
