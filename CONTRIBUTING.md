@@ -13,9 +13,13 @@ In no particular order, examples include:
 
 No contribution is too small. Although, contributions can be too big, so let's discuss via [Matrix] or via an [issue].
 
+> [!NOTE]
+> For Mesa-wide contribution process and development expectations, see [Mesa CONTRIBUTING].
+
 [Mesa discussions]: https://github.com/mesa/mesa/discussions
 [Matrix]: https://matrix.to/#/#project-mesa:matrix.org
 [issue]: https://github.com/mesa/mesa-geo/issues
+[Mesa CONTRIBUTING]: https://github.com/mesa/mesa/blob/main/CONTRIBUTING.md
 
 **To submit a contribution**
 
